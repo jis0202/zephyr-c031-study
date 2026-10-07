@@ -19,10 +19,10 @@ NUCLEO-C031C6 기반 Zephyr RTOS 개발 및 Git 협업 학습 프로젝트.
 - [x] Development environment setup
 - [x] Blinky firmware build
 - [x] Hardware flashing and LED verification
-- [ ] GPIO timing modification
-- [ ] UART console
-- [ ] RTOS threads and synchronization
-- [ ] Message queue
+- [x] GPIO timing modification
+- [x] UART console
+- [x] RTOS threads and synchronization
+- [x] Message queue
 - [ ] Device controller application
 
 ## Source
