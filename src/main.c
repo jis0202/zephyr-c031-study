@@ -5,9 +5,11 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <string.h>
 
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/gpio.h>
+#include <zephyr/console/console.h>
 
 #define LED0_NODE DT_ALIAS(led0)
 
@@ -20,27 +22,18 @@ static const struct gpio_dt_spec led =
 	GPIO_DT_SPEC_GET(LED0_NODE, gpios);
 
 
-/*
- * Thread 사이에서 전달할 실제 데이터
- */
 struct control_msg {
 	uint32_t event_id;
 	bool led_on;
 };
 
 
-/*
- * control_msg 크기의 메시지를 최대 4개 저장할 수 있는 Queue
- */
 K_MSGQ_DEFINE(control_msgq,
 	      sizeof(struct control_msg),
 	      MSGQ_MAX_MESSAGES,
 	      4);
 
 
-/*
- * Message Queue의 데이터를 받아 실제 HW를 제어하는 Thread
- */
 static void control_worker(void *arg1, void *arg2, void *arg3)
 {
 	struct control_msg msg;
@@ -51,14 +44,8 @@ static void control_worker(void *arg1, void *arg2, void *arg3)
 
 	while (1) {
 
-		/*
-		 * 메시지가 들어올 때까지 Block
-		 */
 		k_msgq_get(&control_msgq, &msg, K_FOREVER);
 
-		/*
-		 * Queue에서 받은 값으로 LED 제어
-		 */
 		gpio_pin_set_dt(&led, msg.led_on);
 
 		printf("[control] event %u -> LED %s\n",
@@ -85,7 +72,7 @@ int main(void)
 {
 	int ret;
 	uint32_t event_count = 0;
-	bool next_led_state = true;
+	char *line;
 
 	struct control_msg msg;
 
@@ -101,34 +88,49 @@ int main(void)
 		return 0;
 	}
 
-	printf("RTOS message queue test started\n");
+	console_getline_init();
+
+	printf("\n");
+	printf("UART Device Controller started\n");
+	printf("Commands:\n");
+	printf("  LED ON\n");
+	printf("  LED OFF\n");
 
 	while (1) {
 
-		k_msleep(1000);
+		printf("> ");
 
-		event_count++;
+		line = console_getline();
 
-		/*
-		 * 전달할 메시지 생성
-		 */
-		msg.event_id = event_count;
-		msg.led_on = next_led_state;
+		if (strcmp(line, "LED ON") == 0) {
 
-		printf("[main] send event %u -> LED %s\n",
-		       msg.event_id,
-		       msg.led_on ? "ON" : "OFF");
+			event_count++;
 
-		/*
-		 * Queue에 메시지 전달
-		 */
+			msg.event_id = event_count;
+			msg.led_on = true;
+
+		} else if (strcmp(line, "LED OFF") == 0) {
+
+			event_count++;
+
+			msg.event_id = event_count;
+			msg.led_on = false;
+
+		} else {
+
+			printf("[command] invalid command: %s\n", line);
+			continue;
+		}
+
 		ret = k_msgq_put(&control_msgq, &msg, K_NO_WAIT);
 
 		if (ret != 0) {
-			printf("[main] message queue full\n");
-		} else {
-			next_led_state = !next_led_state;
+			printf("[command] message queue full\n");
+			continue;
 		}
+
+		printf("[command] event %u queued\n",
+		       msg.event_id);
 	}
 
 	return 0;
