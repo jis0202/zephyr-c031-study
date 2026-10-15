@@ -22,18 +22,51 @@ static const struct gpio_dt_spec led =
 	GPIO_DT_SPEC_GET(LED0_NODE, gpios);
 
 
+/*
+ * Control Thread로 전달할 명령 데이터
+ */
 struct control_msg {
 	uint32_t event_id;
 	bool led_on;
 };
 
 
+/*
+ * Device의 현재 상태
+ *
+ * Main Thread와 Control Thread가 함께 접근하므로
+ * Mutex로 보호한다.
+ */
+struct app_device_state {
+	bool led_on;
+	uint32_t last_event_id;
+};
+
+
+static struct app_device_state state = {
+	.led_on = false,
+	.last_event_id = 0,
+};
+
+
+/*
+ * 공유 Device State 보호용 Mutex
+ */
+K_MUTEX_DEFINE(state_mutex);
+
+
+/*
+ * Command -> Control Thread 메시지 전달용 Queue
+ */
 K_MSGQ_DEFINE(control_msgq,
 	      sizeof(struct control_msg),
 	      MSGQ_MAX_MESSAGES,
 	      4);
 
 
+/*
+ * 실제 Hardware Control 담당 Thread
+ */
 static void control_worker(void *arg1, void *arg2, void *arg3)
 {
 	struct control_msg msg;
@@ -44,9 +77,25 @@ static void control_worker(void *arg1, void *arg2, void *arg3)
 
 	while (1) {
 
+		/*
+		 * 명령이 들어올 때까지 Block
+		 */
 		k_msgq_get(&control_msgq, &msg, K_FOREVER);
 
+		/*
+		 * 실제 Hardware 제어
+		 */
 		gpio_pin_set_dt(&led, msg.led_on);
+
+		/*
+		 * 공유 Device State 갱신
+		 */
+		k_mutex_lock(&state_mutex, K_FOREVER);
+
+		state.led_on = msg.led_on;
+		state.last_event_id = msg.event_id;
+
+		k_mutex_unlock(&state_mutex);
 
 		printf("[control] event %u -> LED %s\n",
 		       msg.event_id,
@@ -75,6 +124,7 @@ int main(void)
 	char *line;
 
 	struct control_msg msg;
+	struct app_device_state snapshot;
 
 	if (!gpio_is_ready_dt(&led)) {
 		printf("GPIO device is not ready\n");
@@ -95,6 +145,7 @@ int main(void)
 	printf("Commands:\n");
 	printf("  LED ON\n");
 	printf("  LED OFF\n");
+	printf("  STATUS\n");
 
 	while (1) {
 
@@ -115,6 +166,28 @@ int main(void)
 
 			msg.event_id = event_count;
 			msg.led_on = false;
+
+		} else if (strcmp(line, "STATUS") == 0) {
+
+			/*
+			 * 공유 상태를 읽는 동안 Mutex 획득
+			 */
+			k_mutex_lock(&state_mutex, K_FOREVER);
+
+			snapshot = state;
+
+			k_mutex_unlock(&state_mutex);
+
+			/*
+			 * printf는 Mutex 밖에서 수행
+			 */
+			printf("[status]\n");
+			printf("  LED: %s\n",
+			       snapshot.led_on ? "ON" : "OFF");
+			printf("  Last Event: %u\n",
+			       snapshot.last_event_id);
+
+			continue;
 
 		} else {
 

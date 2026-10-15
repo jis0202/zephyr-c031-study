@@ -24,8 +24,10 @@ NUCLEO-C031C6 기반으로 Zephyr RTOS의 기본 구조와 Thread 간 동기화,
 - [x] UART console verification
 - [x] RTOS thread and semaphore synchronization
 - [x] Message queue based inter-thread communication
-- [ ] UART command processing
-- [ ] Device controller application
+- [x] UART command processing
+- [X] Device controller application
+- [x] Device state management
+- [x] Mutex based shared state protection
 
 ## Implemented Concepts
 
